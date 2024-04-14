@@ -5,6 +5,9 @@
 #include <Arduino.h> //Leitor RFID
 #include <SPI.h> //Leitor RFID
 #include <MFRC522.h> //Leitor RFID
+#include <CryptoAES_CBC.h>
+#include <AES.h>
+#include <string.h>
 
 //Definição de variaveis
 #define SS_PIN D8 //Leitor RFID
@@ -14,7 +17,8 @@ Servo fechadura; //Servo motor
 MFRC522 rfid(SS_PIN, RST_PIN); //Servo motor
 byte nuidPICC[4]; //ID do cartão RFID
 bool leituraEfetuada = false; //Controle se a leitura já foi feita
-String cpf = "51932861866"; //CPF professor, fixo inicialmente, mas será obtido pelo cartão posteriormente
+String cpfAdmin="51932861866"; //CPF professor, fixo inicialmente, mas será obtido pelo cartão posteriormente
+String cpfDocente="";
 String nome = "L20"; //Nome da sala
 const char* SSID = "Tuituinic"; //Nome do Wifi
 const char* PASSWORD = "rosatuituinic"; //Senha do Wifi
@@ -25,25 +29,36 @@ String senha = "hardware123"; //Senha de usuario da porta
 unsigned long tempoBateuCartao = 0; //Momento em que o cartão é enconstado
 const unsigned long tempoReset = 60000; //Tempo para voltar a ler novamente qualquer cartão encostado
 const char fingerprint[] PROGMEM = "B7 65 A0 75 AB ED 1F 46 38 65 09 F8 7D 73 8E 39 DD A0 ED 50"; //Certificado SSL do site
+// Chave de 16 bytes (128 bits) para criptografia
+byte chave[16] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F};
+// Armazena o texto descriptografado após a decodificação
+byte decryptedtext[16];
+// Objeto da classe AES128
+AES128 aes128;
+MFRC522::MIFARE_Key key;
 
 //Definição de funções
 int fazerRequisicaoGet(String path, String token); //Requisicao GET
 String fazerRequisicaoPost(); //Requisicao POST
 void initWiFi(); //Inicia Wifi
 void printHex(byte *buffer, byte bufferSize); //Imprime o ID do cartão
-void abrir(); //Funcao de abertura
-void fechar(); //Funcao de fechamento
+void abrir(String cpf=cpfDocente); //Funcao de abertura
+void fechar(String cpf=cpfDocente); //Funcao de fechamento
 String extrairToken(String resposta); //Funcao para extrair do do body do json de resposta da rota de autenticação
+void modo_leitura();
 
 void setup() {
   fechadura.attach(pinServo); //Inicia o servo motor
   Serial.begin(9600); //Estabelece frequencia da comunicação serial
   initWiFi(); //Inicia o Wifi
+  //Prepara chave - padrao de fabrica = FFFFFFFFFFFFh
+  for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;
+  aes128.setKey(chave, 16); // Define a chave para AES
   SPI.begin(); //Inicializa o leitor RFID
   rfid.PCD_Init(); //Inicializa o leitor RFID
   //Fecha a porta
   fechadura.write(0);
-  fechar();
+  fechar(cpfAdmin);
 }
 
 void loop() {
@@ -59,15 +74,7 @@ void loop() {
       return;
   //Caso nenhuma leitura tenha sido feita
   if (!leituraEfetuada) {
-      //Imprime o ID do cartão em Hexadecimal
-      Serial.println(F("Cartão detectado."));
-      for (byte i = 0; i < 4; i++) {
-          nuidPICC[i] = rfid.uid.uidByte[i];
-      }
-      Serial.println(F("NUID tag:"));
-      Serial.print(F("Hex: "));
-      printHex(rfid.uid.uidByte, rfid.uid.size);
-      Serial.println();
+      modo_leitura();
       tempoBateuCartao = millis(); //Grava o tempo
       leituraEfetuada=true; //Registra que a leitura foi feita
       //Caso a porta esteja fechada, será aberta. Caso esteja aberta, será fechada.
@@ -91,7 +98,7 @@ void loop() {
 int fazerRequisicaoGet(String path, String token) {
   WiFiClientSecure client; // inicia cliente HTTPS
   String url=urlBase+path; //Concatena a url base com a informação de path
-
+  Serial.println(url);
   //Obtem informações sobre o host e rota
   String host = url.substring(8);
   int index = host.indexOf('/');
@@ -215,7 +222,7 @@ void printHex(byte *buffer, byte bufferSize) {
 }
 
 //Função de abertura da porta
-void abrir(){
+void abrir(String cpf){
   //Obtem token de autenticação
   String token = fazerRequisicaoPost();
   if(token.equals("")){
@@ -249,7 +256,7 @@ void abrir(){
 }
 
 //Função de fechamento da porta
-void fechar(){
+void fechar(String cpf){
   //Obtem token de autenticação
   String token = fazerRequisicaoPost();
   if(token.equals("")){
@@ -296,4 +303,77 @@ String extrairToken(String resposta) {
   Serial.println("Token extraído:");
   Serial.println(token);
   return token;
+}
+
+void modo_leitura()
+{
+  Serial.flush();
+  //Mostra UID na serial
+  Serial.print("UID da tag : ");
+  String conteudo = "";
+  byte letra;
+  for (byte i = 0; i < rfid.uid.size; i++)
+  {
+    Serial.print(rfid.uid.uidByte[i] < 0x10 ? " 0" : " ");
+    Serial.print(rfid.uid.uidByte[i], HEX);
+    conteudo.concat(String(rfid.uid.uidByte[i]<0x10 ? " 0" : " "));
+    conteudo.concat(String(rfid.uid.uidByte[i], HEX));
+  }
+  Serial.println();
+ 
+  //Obtem os dados do setor 1, bloco 4 = Nome
+  MFRC522::StatusCode status;
+  byte buffer[30];
+  byte size = sizeof(buffer);
+ 
+  //Obtem os dados do setor 0, bloco 1 = Sobrenome
+  byte  sector         = 0;
+  byte blockAddr      = 1;
+  byte trailerBlock   = 3;
+ 
+  //Autenticacao usando chave A
+  status=rfid.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A,
+                                  trailerBlock, &key, &(rfid.uid));
+  if (status != MFRC522::STATUS_OK)
+  {
+    Serial.print(F("PCD_Authenticate() failed: "));
+    Serial.println(rfid.GetStatusCodeName(status));
+    return;
+  }
+  status = rfid.MIFARE_Read(blockAddr, buffer, &size);
+  if (status != MFRC522::STATUS_OK)
+  {
+    Serial.print(F("MIFARE_Read() failed: "));
+    Serial.println(rfid.GetStatusCodeName(status));
+  }
+  //Mostra os dados do sobrenome no Serial Monitor e LCD
+  
+  aes128.decryptBlock(decryptedtext, buffer);
+
+       Serial.println("\nTexto Descriptografado:");
+for (int i = 0; i < sizeof(decryptedtext); i++) {
+  Serial.write(decryptedtext[i]);
+}
+Serial.println();
+Serial.flush();
+
+cpfDocente = "";
+
+  // Converter os bytes descriptografados em uma string
+ for (int i = 0; i < sizeof(decryptedtext); i++) {
+    // Adicionar cada byte à string cpfDocente
+    // Utilize a função char() para converter o byte em um caractere
+    cpfDocente += char(decryptedtext[i]);
+  }
+
+  // Remover quaisquer espaços extras que possam ter sido adicionados durante a conversão
+  cpfDocente.trim();
+
+  // Saída para monitor serial para verificação
+  Serial.println("CPF do docente: " + cpfDocente);
+   int tamanhoCpfDocente = cpfDocente.length();
+  Serial.println("Tamanho do CPF do docente: " + String(tamanhoCpfDocente));
+
+  
+  delay(3000);
 }
