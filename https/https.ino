@@ -13,6 +13,10 @@
 #define SS_PIN D8 //Leitor RFID
 #define RST_PIN D0 //Leitor RFID
 #define pinServo D1 //Servo motor
+#define ledVerde D2
+#define ledVermelho D3
+#define ledBranco D4
+
 Servo fechadura; //Servo motor
 MFRC522 rfid(SS_PIN, RST_PIN); //Servo motor
 byte nuidPICC[4]; //ID do cartão RFID
@@ -48,7 +52,12 @@ String extrairToken(String resposta); //Funcao para extrair do do body do json d
 void modo_leitura();
 
 void setup() {
-  fechadura.attach(pinServo); //Inicia o servo motor
+  pinMode(ledVerde, OUTPUT);
+  pinMode(ledVermelho, OUTPUT);
+  pinMode(ledBranco, OUTPUT);
+  digitalWrite(ledVerde, HIGH);
+  digitalWrite(ledVermelho, HIGH);
+  digitalWrite(ledBranco, HIGH);
   Serial.begin(9600); //Estabelece frequencia da comunicação serial
   initWiFi(); //Inicia o Wifi
   //Prepara chave - padrao de fabrica = FFFFFFFFFFFFh
@@ -57,14 +66,21 @@ void setup() {
   SPI.begin(); //Inicializa o leitor RFID
   rfid.PCD_Init(); //Inicializa o leitor RFID
   //Fecha a porta
+  fechadura.attach(pinServo); //Inicia o servo motor
   fechadura.write(0);
   fechar(cpfAdmin);
+  digitalWrite(ledVerde, LOW);
+  digitalWrite(ledVermelho, LOW);
+  digitalWrite(ledBranco, LOW);
 }
 
 void loop() {
   //Caso tenha se passado o tempo de reset, limpa a informação do último cartão lido
   if (millis() - tempoBateuCartao >= tempoReset) {
     leituraEfetuada = false;
+    digitalWrite(ledBranco, LOW);
+    digitalWrite(ledVermelho, LOW);
+    digitalWrite(ledVerde, LOW);
   }
   //Aguarda até que um cartão seja encostado
   if ( ! rfid.PICC_IsNewCardPresent())
@@ -74,6 +90,7 @@ void loop() {
       return;
   //Caso nenhuma leitura tenha sido feita
   if (!leituraEfetuada) {
+      digitalWrite(ledBranco, HIGH);
       modo_leitura();
       tempoBateuCartao = millis(); //Grava o tempo
       leituraEfetuada=true; //Registra que a leitura foi feita
@@ -227,6 +244,8 @@ void abrir(String cpf){
   String token = fazerRequisicaoPost();
   if(token.equals("")){
     Serial.println("Falha ao obter token de autenticação");
+    digitalWrite(ledBranco, LOW);
+    digitalWrite(ledVermelho, HIGH);
     return;
   }
 
@@ -239,18 +258,28 @@ void abrir(String cpf){
   //Retorno por status
   if(resposta==200){
     fechadura.write(179);
+    digitalWrite(ledBranco, LOW);
+    digitalWrite(ledVerde, HIGH);
     Serial.println("Porta aberta");
   }
   else if (resposta==404){
+    digitalWrite(ledBranco, LOW);
+    digitalWrite(ledVermelho, HIGH);
     Serial.println("Professor ou sala não encontrada");
   }
   else if (resposta==403){
+    digitalWrite(ledBranco, LOW);
+    digitalWrite(ledVermelho, HIGH);
     Serial.println("Professor sem acesso a sala");
   }
    else if (resposta==409){
+    digitalWrite(ledBranco, LOW);
+    digitalWrite(ledVermelho, HIGH);
     Serial.println("Sala já está aberta");
   }
    else {
+    digitalWrite(ledBranco, LOW);
+    digitalWrite(ledVermelho, HIGH);
     Serial.println("Falha na comunicação com o servidor");
   }
 }
@@ -260,6 +289,8 @@ void fechar(String cpf){
   //Obtem token de autenticação
   String token = fazerRequisicaoPost();
   if(token.equals("")){
+    digitalWrite(ledBranco, LOW);
+    digitalWrite(ledVermelho, HIGH);
     Serial.println("Falha ao obter token de autenticação");
     return;
   }
@@ -273,21 +304,33 @@ void fechar(String cpf){
   //Retorno por status
   if(resposta==200){
     fechadura.write(0);
+    digitalWrite(ledBranco, LOW);
+    digitalWrite(ledVerde, HIGH);
     Serial.println("Porta fechada");
   }
   else if (resposta==404){
+    digitalWrite(ledBranco, LOW);
+    digitalWrite(ledVermelho, HIGH);
     Serial.println("Professor ou sala não encontrada");
   }
   else if (resposta==403){
+    digitalWrite(ledBranco, LOW);
+    digitalWrite(ledVermelho, HIGH);
     Serial.println("Professor sem acesso a sala");
   }
    else if (resposta==409){
+    digitalWrite(ledBranco, LOW);
+    digitalWrite(ledVermelho, HIGH);
     Serial.println("Sala já está fechada");
   }
   else if (resposta==401){
+    digitalWrite(ledBranco, LOW);
+    digitalWrite(ledVermelho, HIGH);
     Serial.println("Professor não foi o último a abrir");
   }
   else {
+    digitalWrite(ledBranco, LOW);
+    digitalWrite(ledVermelho, HIGH);
     Serial.println("Falha na comunicação com o servidor");
   }
 }
@@ -375,5 +418,5 @@ cpfDocente = "";
   Serial.println("Tamanho do CPF do docente: " + String(tamanhoCpfDocente));
 
   
-  delay(3000);
+  delay(1000);
 }
