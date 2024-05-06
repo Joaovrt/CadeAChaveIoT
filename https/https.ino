@@ -8,6 +8,7 @@
 #include <CryptoAES_CBC.h>
 #include <AES.h>
 #include <string.h>
+#include <PubSubClient.h>
 
 //Definição de variaveis
 #define SS_PIN D8 //Leitor RFID
@@ -24,8 +25,8 @@ bool leituraEfetuada = false; //Controle se a leitura já foi feita
 String cpfAdmin="51932861866"; //CPF professor, fixo inicialmente, mas será obtido pelo cartão posteriormente
 String cpfDocente="";
 String nome = "L20"; //Nome da sala
-const char* SSID = "Tuituinic"; //Nome do Wifi
-const char* PASSWORD = "rosatuituinic"; //Senha do Wifi
+const char* SSID = "Bueiro"; //Nome do Wifi
+const char* PASSWORD = "ProjetoUpx"; //Senha do Wifi
 String urlBase = "https://cadeachave.onrender.com/api/sala"; //Url base para abrir ou fechar a sala
 String urlAuth = "https://cadeachave.onrender.com/api/user/login"; //Url de autenticação
 String login = "hardware"; //Login de usuario da porta
@@ -40,6 +41,18 @@ byte decryptedtext[16];
 // Objeto da classe AES128
 AES128 aes128;
 MFRC522::MIFARE_Key key;
+// MQTT Broker
+const char *mqtt_broker = "test.mosquitto.org";  //Host do broket
+const char *topic = "CADEACHAVE/SALA/L20";            //Topico a ser subscrito e publicado
+const char *mqtt_username = "";         //Usuario
+const char *mqtt_password = "";         //Senha
+const int mqtt_port = 1883;             //Porta
+
+//Variáveis
+bool mqttStatus = 0;
+WiFiClient espClient;
+PubSubClient client(espClient);
+bool acaoMQTT = false;
 
 //Definição de funções
 int fazerRequisicaoGet(String path, String token); //Requisicao GET
@@ -50,6 +63,8 @@ void abrir(String cpf=cpfDocente); //Funcao de abertura
 void fechar(String cpf=cpfDocente); //Funcao de fechamento
 String extrairToken(String resposta); //Funcao para extrair do do body do json de resposta da rota de autenticação
 void modo_leitura();
+bool connectMQTT();
+void callback(char *topic, byte * payload, unsigned int length);
 
 void setup() {
   pinMode(ledVerde, OUTPUT);
@@ -72,9 +87,14 @@ void setup() {
   digitalWrite(ledVerde, LOW);
   digitalWrite(ledVermelho, LOW);
   digitalWrite(ledBranco, LOW);
+  mqttStatus =  connectMQTT();
 }
 
 void loop() {
+  if ( mqttStatus){
+    
+    client.loop();    
+  }
   //Caso tenha se passado o tempo de reset, limpa a informação do último cartão lido
   if (millis() - tempoBateuCartao >= tempoReset) {
     leituraEfetuada = false;
@@ -82,25 +102,40 @@ void loop() {
     digitalWrite(ledVermelho, LOW);
     digitalWrite(ledVerde, LOW);
   }
-  //Aguarda até que um cartão seja encostado
-  if ( ! rfid.PICC_IsNewCardPresent())
-      return;
-  //Aguarda até que um cartão seja lido
-  if ( ! rfid.PICC_ReadCardSerial())
-      return;
+  if(!acaoMQTT){
+     //Aguarda até que um cartão seja encostado
+    if ( ! rfid.PICC_IsNewCardPresent())
+        return;
+    //Aguarda até que um cartão seja lido
+    if ( ! rfid.PICC_ReadCardSerial())
+        return; 
+  }
   //Caso nenhuma leitura tenha sido feita
-  if (!leituraEfetuada) {
+  if (!leituraEfetuada||acaoMQTT) {
       digitalWrite(ledBranco, HIGH);
-      modo_leitura();
-      tempoBateuCartao = millis(); //Grava o tempo
-      leituraEfetuada=true; //Registra que a leitura foi feita
-      //Caso a porta esteja fechada, será aberta. Caso esteja aberta, será fechada.
-      int posicao = fechadura.read();
-      if(posicao==0){
-        abrir();
+      if(acaoMQTT){
+        cpfDocente=cpfAdmin;
+        //Caso a porta esteja fechada, será aberta. Caso esteja aberta, será fechada.
+        int posicao = fechadura.read();
+        if(posicao==0){
+          abrir();
+        }
+        else{
+          fechar();
+        }
       }
       else{
-        fechar();
+        modo_leitura();
+        tempoBateuCartao = millis(); //Grava o tempo
+        leituraEfetuada=true; //Registra que a leitura foi feita
+        //Caso a porta esteja fechada, será aberta. Caso esteja aberta, será fechada.
+        int posicao = fechadura.read();
+        if(posicao==0){
+          abrir();
+        }
+        else{
+          fechar();
+        }
       }
   }
   //Caso a leitura já tenha sido feita
@@ -109,6 +144,50 @@ void loop() {
   //Para leitura momentaneamente
   rfid.PICC_HaltA();
   rfid.PCD_StopCrypto1();
+}
+
+bool connectMQTT() {
+  byte tentativa = 0;
+  client.setServer(mqtt_broker, mqtt_port);
+  client.setCallback(callback);
+
+  do {
+    String client_id = "CADEACHAVE-";
+    client_id += String(WiFi.macAddress());
+
+    if (client.connect(client_id.c_str(), mqtt_username, mqtt_password)) {
+      Serial.println("Exito na conexão:");
+      Serial.printf("Cliente %s conectado ao broker\n", client_id.c_str());
+    } else {
+      Serial.print("Falha ao conectar: ");
+      Serial.print(client.state());
+      Serial.println();
+      Serial.print("Tentativa: ");
+      Serial.println(tentativa);
+      delay(2000);
+    }
+    tentativa++;
+  } while (!client.connected() && tentativa < 5);
+
+  if (tentativa < 5) {
+    // publish and subscribe   
+    client.publish(topic, "L20"); 
+    client.subscribe(topic);
+    return 1;
+  } else {
+    Serial.println("Não conectado");    
+    return 0;
+  }
+}
+
+void callback(char *topic, byte * payload, unsigned int length) {
+  Serial.print("Message arrived in topic: ");
+  Serial.println(topic);
+  char rec = (char) payload[0];
+  if(rec=='1')
+    acaoMQTT = true;
+  Serial.println(acaoMQTT);
+  Serial.println("-----------------------");
 }
 
 //Função de requisição de abertura ou fechamento da porta
@@ -246,6 +325,8 @@ void abrir(String cpf){
     Serial.println("Falha ao obter token de autenticação");
     digitalWrite(ledBranco, LOW);
     digitalWrite(ledVermelho, HIGH);
+    cpfDocente="";
+    acaoMQTT=false;
     return;
   }
 
@@ -282,6 +363,8 @@ void abrir(String cpf){
     digitalWrite(ledVermelho, HIGH);
     Serial.println("Falha na comunicação com o servidor");
   }
+  cpfDocente="";
+  acaoMQTT=false;
 }
 
 //Função de fechamento da porta
@@ -292,6 +375,8 @@ void fechar(String cpf){
     digitalWrite(ledBranco, LOW);
     digitalWrite(ledVermelho, HIGH);
     Serial.println("Falha ao obter token de autenticação");
+    cpfDocente="";
+    acaoMQTT=false;
     return;
   }
 
@@ -333,6 +418,8 @@ void fechar(String cpf){
     digitalWrite(ledVermelho, HIGH);
     Serial.println("Falha na comunicação com o servidor");
   }
+  cpfDocente="";
+  acaoMQTT=false;
 }
 
 //Função para extrair token da resposta
