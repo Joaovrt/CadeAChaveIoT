@@ -24,16 +24,16 @@ byte nuidPICC[4]; //ID do cartão RFID
 bool leituraEfetuada = false; //Controle se a leitura já foi feita
 String cpfAdmin="51932861866"; //CPF professor, fixo inicialmente, mas será obtido pelo cartão posteriormente
 String cpfDocente="";
-String nome = "L20"; //Nome da sala
-const char* SSID = "Bueiro"; //Nome do Wifi
-const char* PASSWORD = "ProjetoUpx"; //Senha do Wifi
-String urlBase = "https://cadeachave.onrender.com/api/sala"; //Url base para abrir ou fechar a sala
-String urlAuth = "https://cadeachave.onrender.com/api/user/login"; //Url de autenticação
+String nome = "L21"; //Nome da sala
+const char* SSID = "Tuituinic"; //Nome do Wifi
+const char* PASSWORD = "rosatuituinic"; //Senha do Wifi
+String urlBase = "https://cadeachave-1715465469308.azurewebsites.net/api/sala"; //Url base para abrir ou fechar a sala
+String urlAuth = "https://cadeachave-1715465469308.azurewebsites.net/api/user/login"; //Url de autenticação
 String login = "hardware"; //Login de usuario da porta
 String senha = "hardware123"; //Senha de usuario da porta
 unsigned long tempoBateuCartao = 0; //Momento em que o cartão é enconstado
 const unsigned long tempoReset = 60000; //Tempo para voltar a ler novamente qualquer cartão encostado
-const char fingerprint[] PROGMEM = "B7 65 A0 75 AB ED 1F 46 38 65 09 F8 7D 73 8E 39 DD A0 ED 50"; //Certificado SSL do site
+const char fingerprint[] PROGMEM = "51 68 54 2C AD 63 02 B3 5C 86 92 257B 8B 6B 34 A3 CB 2D A4"; //Certificado SSL do site
 // Chave de 16 bytes (128 bits) para criptografia
 byte chave[16] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F};
 // Armazena o texto descriptografado após a decodificação
