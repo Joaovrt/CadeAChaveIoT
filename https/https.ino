@@ -130,11 +130,21 @@ void loop() {
         leituraEfetuada=true; //Registra que a leitura foi feita
         //Caso a porta esteja fechada, será aberta. Caso esteja aberta, será fechada.
         int posicao = fechadura.read();
-        if(posicao==0){
-          abrir();
+        if(strcmp(cpfDocente.c_str(), cpfAdmin.c_str()) == 0){
+          if(posicao == 0){
+            fechadura.write(179);
+          }
+          else{
+            fechadura.write(0);
+          }
         }
         else{
-          fechar();
+           if(posicao==0){
+              abrir();
+            }
+            else{
+              fechar();
+            }
         }
       }
   }
