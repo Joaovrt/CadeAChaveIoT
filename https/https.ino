@@ -25,8 +25,8 @@ bool leituraEfetuada = false; //Controle se a leitura já foi feita
 String cpfAdmin="51932861866"; //CPF professor, fixo inicialmente, mas será obtido pelo cartão posteriormente
 String cpfDocente="";
 String nome = "L21"; //Nome da sala
-const char* SSID = "Tuituinic"; //Nome do Wifi
-const char* PASSWORD = "rosatuituinic"; //Senha do Wifi
+const char* SSID = "Bueiro"; //Nome do Wifi
+const char* PASSWORD = "ProjetoUpx"; //Senha do Wifi
 String urlBase = "https://cadeachave-1715465469308.azurewebsites.net/api/sala"; //Url base para abrir ou fechar a sala
 String urlAuth = "https://cadeachave-1715465469308.azurewebsites.net/api/user/login"; //Url de autenticação
 String login = "hardware"; //Login de usuario da porta
@@ -43,7 +43,7 @@ AES128 aes128;
 MFRC522::MIFARE_Key key;
 // MQTT Broker
 const char *mqtt_broker = "test.mosquitto.org";  //Host do broket
-const char *topic = "CADEACHAVE/SALA/L20";            //Topico a ser subscrito e publicado
+const char *topic = "CADEACHAVE/SALA/L21";            //Topico a ser subscrito e publicado
 const char *mqtt_username = "";         //Usuario
 const char *mqtt_password = "";         //Senha
 const int mqtt_port = 1883;             //Porta
@@ -437,7 +437,7 @@ String extrairToken(String resposta) {
   Serial.println(resposta);
   int startPos = resposta.indexOf("{\"token") + 10;
   Serial.println(startPos);
-  int endPos = resposta.indexOf("\"}", startPos);
+  int endPos = resposta.indexOf("\",", startPos);
   Serial.println(endPos);
   String token = resposta.substring(startPos, endPos);
   Serial.println("Token extraído:");
