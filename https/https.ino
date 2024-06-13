@@ -181,7 +181,7 @@ bool connectMQTT() {
 
   if (tentativa < 5) {
     // publish and subscribe   
-    client.publish(topic, "L20"); 
+    client.publish(topic, "L21"); 
     client.subscribe(topic);
     return 1;
   } else {
