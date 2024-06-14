@@ -53,6 +53,7 @@ bool mqttStatus = 0;
 WiFiClient espClient;
 PubSubClient client(espClient);
 bool acaoMQTT = false;
+unsigned long lastReconnectAttempt = 0;
 
 //Definição de funções
 int fazerRequisicaoGet(String path, String token); //Requisicao GET
@@ -65,6 +66,7 @@ String extrairToken(String resposta); //Funcao para extrair do do body do json d
 void modo_leitura();
 bool connectMQTT();
 void callback(char *topic, byte * payload, unsigned int length);
+bool reconnect(); // Nova função para reconexão
 
 void setup() {
   pinMode(ledVerde, OUTPUT);
@@ -91,9 +93,16 @@ void setup() {
 }
 
 void loop() {
-  if ( mqttStatus){
-    
-    client.loop();    
+   if (!client.connected()) {
+    unsigned long now = millis();
+    if (now - lastReconnectAttempt > 5000) { // Tenta reconectar a cada 5 segundos
+      lastReconnectAttempt = now;
+      if (reconnect()) {
+        lastReconnectAttempt = 0;
+      }
+    }
+  } else {
+    client.loop();
   }
   //Caso tenha se passado o tempo de reset, limpa a informação do último cartão lido
   if (millis() - tempoBateuCartao >= tempoReset) {
@@ -157,47 +166,42 @@ void loop() {
 }
 
 bool connectMQTT() {
-  byte tentativa = 0;
   client.setServer(mqtt_broker, mqtt_port);
   client.setCallback(callback);
-
-  do {
-    String client_id = "CADEACHAVE-";
-    client_id += String(WiFi.macAddress());
-
-    if (client.connect(client_id.c_str(), mqtt_username, mqtt_password)) {
-      Serial.println("Exito na conexão:");
-      Serial.printf("Cliente %s conectado ao broker\n", client_id.c_str());
-    } else {
-      Serial.print("Falha ao conectar: ");
-      Serial.print(client.state());
-      Serial.println();
-      Serial.print("Tentativa: ");
-      Serial.println(tentativa);
-      delay(2000);
-    }
-    tentativa++;
-  } while (!client.connected() && tentativa < 5);
-
-  if (tentativa < 5) {
-    // publish and subscribe   
-    client.publish(topic, "L21"); 
+  if (client.connect("CADEACHAVE_L21")) {
+    client.publish(topic, "Dispositivo conectado");
     client.subscribe(topic);
-    return 1;
+    Serial.println("Conectado ao MQTT Broker!");
+    return true;
   } else {
-    Serial.println("Não conectado");    
-    return 0;
+    Serial.print("Falha na conexão ao MQTT Broker, rc=");
+    Serial.print(client.state());
+    Serial.println(". Tentando novamente em 5 segundos");
+    return false;
   }
 }
 
-void callback(char *topic, byte * payload, unsigned int length) {
-  Serial.print("Message arrived in topic: ");
-  Serial.println(topic);
-  char rec = (char) payload[0];
-  if(rec=='1')
+bool reconnect() {
+  Serial.print("Tentando reconectar ao MQTT Broker...");
+  if (client.connect("CADEACHAVE_L21")) {
+    Serial.println("Conectado ao MQTT Broker!");
+    client.publish(topic, "Dispositivo reconectado");
+    client.subscribe(topic);
+  }
+  return client.connected();
+}
+
+void callback(char *topic, byte *payload, unsigned int length) {
+  Serial.print("Mensagem recebida no tópico: ");
+  Serial.print(topic);
+  Serial.print(". Mensagem: ");
+  char msg[length + 1];
+  strncpy(msg, (char *)payload, length);
+  msg[length] = '\0';
+  Serial.println(msg);
+  if (strcmp(msg, "1") == 0) {
     acaoMQTT = true;
-  Serial.println(acaoMQTT);
-  Serial.println("-----------------------");
+  }
 }
 
 //Função de requisição de abertura ou fechamento da porta
